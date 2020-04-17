@@ -29,6 +29,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.0/anime.min.js" integrity="sha256-hBMojZuWKocCflyaG8T19KBq9OlTlK39CTxb8AUWKhY=" crossorigin="anonymous"></script>        
         <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js" integrity="sha256-8IvN8DiAvwO7J3WLqoRDg2/XfkOxcB0urCTU4x0kBOM=" crossorigin="anonymous"></script>
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@500&display=swap" rel="stylesheet">
+        <script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
         <script src="Country.js"></script>
         <script id="vertexShader" type="x-shader/x-vertex">     
             attribute vec3 center;   
@@ -73,15 +74,29 @@
         <script>
             let scene = new THREE.Scene();            
             let camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000); 
+            
+            //x: -0.9252628097818509, y: 220.64963312036042, z: 81.90561671013394}
+             //{x:, y: 254.9159138444471, }
+            camera.position.x =  10.408695591394109;
+            camera.position.y = 220.64963312036042;
+            camera.position.z = -0.19462845076874552;
+            camera.rotation.x = -1.5707953267733687
+            camera.rotation.y = 6.770923054004452e-9
+            camera.rotation.z = 0.006770673833770298;
             let isShaderOn = false;           
-            let renderer = new THREE.WebGLRenderer();
+            let renderer = new THREE.WebGLRenderer({antialias:true});
+            let controls = new THREE.OrbitControls( camera, renderer.domElement );
+            controls.target =new THREE.Vector3(0,0,0)
+            controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+				controls.maxPolarAngle = Math.PI / 2;
             let uniforms = {
                         time: { type: "f", value: .1 },
                         resolution: { type: "v2", value: new THREE.Vector2() },
                         currentPos: { type: "v3", value: new THREE.Vector3() }
                     };      
             let startTime = Date.now();
-            let cameraUpdatePos = new THREE.Vector3();
             
             let raycastObjs = [];
             let lineObjs = [];
@@ -94,7 +109,7 @@
 
 
             function init() {
-                scene.background = new THREE.Color(0x222222);
+                scene.background = new THREE.Color(0x1e2431);
                 camera.position.z = 200;
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 document.body.appendChild(renderer.domElement); 
@@ -107,12 +122,15 @@
                     console.log(topojson.bbox(topology));
 
                     for (const feature of features.features) {
+                        console.log(feature);
                         let country = new Country(feature.geometry, feature.properties);                        
                         let shape = country.createShape();
                         let line = country.createLine();
                         raycastObjs.push(shape);
                         lineObjs.push(line);
-
+                        if (country.properties.NAME === "Antarctica"){
+                            continue;
+                        }
                         // Workaround due to South Africa not having proper hole rendering
                         if (country.properties.NAME === "Lesotho") {
                             shape.position.z = .1;
@@ -133,10 +151,7 @@
                 var elapsedMilliseconds = Date.now() - startTime;
                 var elapsedSeconds = elapsedMilliseconds / 1000.;
                 uniforms.time.value = 60. * elapsedSeconds/10;
-                
-                camera.position.x = cameraUpdatePos.x;                
-                camera.position.y = cameraUpdatePos.y;
-                
+                controls.update();
                 renderer.render(scene, camera);
             }
 
@@ -185,20 +200,6 @@
                     }
                 }
 
-
-                document.addEventListener("wheel", onDocumentMouseWheel, false);
-                function onDocumentMouseWheel(event) {
-                    let moveToZ = camera.position.z - event.wheelDeltaY * 0.4;
-                    moveToZ = THREE.MathUtils.clamp(moveToZ, 30, 200);
-
-                    anime({
-                        targets: camera.position,
-                        z: moveToZ,
-                        duration: 500,
-                        easing: "easeOutQuad"
-                    })
-                }
-
                 document.addEventListener("mousemove", onMouseMove, false);
                 function onMouseMove(event) {
                     event.preventDefault();                    
@@ -231,64 +232,12 @@
                     } 
                 }
 
-                var hammertime = new Hammer(window);
-                hammertime.get('pinch').set({ enable: true });
-                hammertime.on("pinchin pinchout", function(ev) {
-                    let moveToZ = camera.position.z;
-                    if(ev.type === "pinchin") {                           
-                        moveToZ += ev.scale * 2;
-                    }
-
-                    if(ev.type === "pinchout") {                        
-                        moveToZ -= ev.scale / 2;
-                    }    
-
-                    moveToZ = THREE.MathUtils.clamp(moveToZ, 30, 200);
-                    camera.position.z = moveToZ;
-                });
                 
 
                 let startPos = new THREE.Vector3();
                 let currentPos = new THREE.Vector3(); 
                 let delta = new THREE.Vector3();
-                hammertime.on("panstart panmove", function(ev) {
-                    if(ev.type === "panstart") {                        
-                        startPos.set( 
-                            (ev.srcEvent.clientX / window.innerWidth) * 2 - 1, 
-                            -(ev.srcEvent.clientY / window.innerHeight) * 2 + 1, 
-                            0.5 
-                        );
-
-                        startPos.unproject( camera );
-                        startPos.sub(camera.position).normalize();                        
-                        let distance = - camera.position.z / startPos.z;
-                        startPos.multiplyScalar( distance )
-                        
-                        startPos.x += cameraUpdatePos.x;
-                        startPos.y += cameraUpdatePos.y;
-                    }
-
-                    if (ev.type === "panmove") 
-                    {                    
-                        currentPos.set( 
-                            (ev.srcEvent.clientX / window.innerWidth) * 2 - 1, 
-                            -(ev.srcEvent.clientY / window.innerHeight) * 2 + 1, 
-                            0.5 
-                        );         
-                        
-
-                        currentPos.unproject( camera );
-                        currentPos.sub(camera.position).normalize();
-                        let distance = - camera.position.z / currentPos.z;
-                        currentPos.multiplyScalar( distance );
-                        
-                        delta.subVectors(startPos, currentPos);                         
-                        cameraUpdatePos.copy(delta);
-
-                        cameraUpdatePos.x = THREE.MathUtils.clamp(cameraUpdatePos.x, -200, 200);
-                        cameraUpdatePos.y = THREE.MathUtils.clamp(cameraUpdatePos.y, -100, 100);
-                    }
-                });
+            
 
                 window.addEventListener("resize", onWindowResize, false);
                 function onWindowResize() {
@@ -383,9 +332,9 @@
                         }             
                                     
                     },
-                    backgroundColor: "#" + scene.background.getHexString(),
-                    shapeColor: "#000000",
-                    lineColor: "#ff0000"
+                    backgroundColor: "#1E2431",
+                    shapeColor: "#2B3039",
+                    lineColor: "#2D343D"
 
                 }
                 let gui = new dat.GUI();
